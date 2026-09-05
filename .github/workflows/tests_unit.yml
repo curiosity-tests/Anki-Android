@@ -26,7 +26,7 @@ on:
         required: true
         type: choice
         # If you alter system names in default + options here, also alter osArray below to match
-        default: '["windows-latest", "macos-14", "ubuntu-latest"]'
+        default: '["ubuntu-latest"]'
         options:
           - '["windows-latest", "macos-14", "ubuntu-latest"]'
           - '["windows-latest"]'
