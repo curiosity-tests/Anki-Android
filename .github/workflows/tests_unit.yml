@@ -3,6 +3,19 @@ name: 🛠️ Unit Tests
 on:
   workflow_dispatch:
     inputs:
+      leg:
+        description: "baseline (uninstrumented) or instrumented (under chalk/curiosity)"
+        type: choice
+        options: [instrumented, baseline]
+        default: instrumented
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
+      racecar_run:
+        description: "racecar correlation token, echoed into the run name"
+        type: string
+        default: ""
       iterations:
         description: "Number of iterations on each chosen operating system. Default 1. Max 85."
         required: true
@@ -30,19 +43,27 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   # if a workflow is run against the same ref, only one at a time...
   # ...but allow different triggers to run concurrent (push, manual flake run, scheduled flake run...)
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.leg || 'push' }}-${{ inputs.racecar_run }}
+  cancel-in-progress: false
+
+env:
+  # The one variable that separates the arms: on baseline, action-checkout
+  # skips its Set up Chalk step entirely.
+  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+
+run-name: "🛠️ Unit Tests ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 
 jobs:
   # We want to generate our matrix dynamically
   # Initial job generates the matrix as a JSON, and following job will use deserialize and use the result
   matrix_prep:
     # Do not run the scheduled jobs on forks
-    if: (github.event_name == 'schedule' && github.repository == 'ankidroid/Anki-Android') || (github.event_name != 'schedule')
+    if: (github.event_name == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || (github.event_name != 'schedule')
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.build-matrix.outputs.result }}
@@ -108,7 +129,7 @@ jobs:
   unit:
     name: JUnit Tests (${{ matrix.name }} run ${{ matrix.iteration }})
     # Do not run the scheduled jobs on forks
-    if: (github.event_name == 'schedule' && github.repository == 'ankidroid/Anki-Android') || (github.event_name != 'schedule')
+    if: (github.event_name == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || (github.event_name != 'schedule')
     needs: matrix_prep
     timeout-minutes: 35
     env:
@@ -128,9 +149,19 @@ jobs:
           maximum-size: 12GB
           disk-root: "C:"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout code
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           fetch-depth: 50
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
 
       - name: Configure JDK
         uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
@@ -198,4 +229,4 @@ jobs:
       - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           verbose: true
-          fail_ci_if_error: ${{ github.repository == 'ankidroid/Anki-Android' }} # optional (default = false)
+          fail_ci_if_error: ${{ github.repository == 'curiosity-tests/Anki-Android' }} # optional (default = false)
