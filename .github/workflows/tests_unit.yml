@@ -48,13 +48,13 @@ permissions:
 concurrency:
   # if a workflow is run against the same ref, only one at a time...
   # ...but allow different triggers to run concurrent (push, manual flake run, scheduled flake run...)
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.leg || 'push' }}-${{ inputs.racecar_run }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ 'push' }}-${{ inputs.leg || 'push' }}-${{ inputs.racecar_run }}
   cancel-in-progress: false
 
 env:
   # The one variable that separates the arms: on baseline, action-checkout
   # skips its Set up Chalk step entirely.
-  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+  CHALK_ON: ${{ inputs.leg == 'instrumented' }}
 
 run-name: "🛠️ Unit Tests ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 
@@ -63,7 +63,7 @@ jobs:
   # Initial job generates the matrix as a JSON, and following job will use deserialize and use the result
   matrix_prep:
     # Do not run the scheduled jobs on forks
-    if: (github.event_name == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || (github.event_name != 'schedule')
+    if: ('push' == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || ('push' != 'schedule')
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.build-matrix.outputs.result }}
@@ -129,7 +129,7 @@ jobs:
   unit:
     name: JUnit Tests (${{ matrix.name }} run ${{ matrix.iteration }})
     # Do not run the scheduled jobs on forks
-    if: (github.event_name == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || (github.event_name != 'schedule')
+    if: ('push' == 'schedule' && github.repository == 'curiosity-tests/Anki-Android') || ('push' != 'schedule')
     needs: matrix_prep
     timeout-minutes: 35
     env:
@@ -201,7 +201,7 @@ jobs:
       # This is not run on the 'happy' CI path as it's a rare de-flake, and would unnecessarily slow
       #  down CI
       - name: De-flake EmptyApplication Tests (schedule/manual run only)
-        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.iteration == 1 && matrix.os == 'ubuntu-latest'
+        if: ('push' == 'schedule' || 'push' == 'workflow_dispatch') && matrix.iteration == 1 && matrix.os == 'ubuntu-latest'
         run: ./gradlew testFullDebugUnitTest -PemptyApplication --daemon
 
       - name: Store Logcat as Artifact
